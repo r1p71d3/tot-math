@@ -31,7 +31,6 @@ class Expression(BaseModel):
     symbols: List[MathSymbol]
     latex: str
     
-    # TODO: make more robust
     def to_sympy(self) -> List[Union[Expr, Eq]]:
         """converts LaTeX expression to SymPy expression"""
         try:
@@ -43,65 +42,150 @@ class Expression(BaseModel):
                 ]
             })
             
-            # substitute values
+            # clean up latex
             formatted_latex = self.latex
+            formatted_latex = formatted_latex.replace('\\_', '_')
+            formatted_latex = formatted_latex.replace('{{', '{').replace('}}', '}')  # handle double braces
+            
+            # substitute values using regex
+            import re
             for symbol in self.symbols:
                 if symbol.value is not None:
                     value_str = str(symbol.value)
-                    name = symbol.name
+                    name = symbol.name.replace('_', '')
                     
                     if formatted_latex == name:
                         formatted_latex = value_str
                         continue
-                        
-                    # handle various symbol contexts
-                    formatted_latex = formatted_latex.replace(f" {name} ", f" {value_str} ")
-                    if formatted_latex.startswith(f"{name} "):
-                        formatted_latex = f"{value_str} " + formatted_latex[len(name)+1:]
-                    if formatted_latex.endswith(f" {name}"):
-                        formatted_latex = formatted_latex[:-len(name)-1] + f" {value_str}"
                     
-                    # handle special characters
-                    formatted_latex = formatted_latex.replace(f"{name}\\", f"{value_str}\\")
-                    formatted_latex = formatted_latex.replace(f"{name}^", f"{value_str}^")
-                    formatted_latex = formatted_latex.replace(f"{name}+", f"{value_str}+")
-                    formatted_latex = formatted_latex.replace(f"{name}-", f"{value_str}-")
-                    formatted_latex = formatted_latex.replace(f"{name}*", f"{value_str}*")
-                    formatted_latex = formatted_latex.replace(f"{name}/", f"{value_str}/")
-                    formatted_latex = formatted_latex.replace(name + "}", value_str + "}")
+                    formatted_latex = re.sub(
+                        fr'\b{re.escape(name)}\b',
+                        value_str,
+                        formatted_latex
+                    )
             
             try:
-                sympy_expr = latex2sympy(formatted_latex)
-            except Exception:
-                # handle common arithmetic expressions if latex2sympy fails
-                if '\\frac' in formatted_latex and '\\cdot' in formatted_latex:
-                    parts = formatted_latex.split('\\frac{')[1].split('}{')
-                    numerator = parts[0].replace('\\cdot', '*')
-                    denominator = parts[1].split('}')[0]
-                    rest = formatted_latex.split('}')[-1].strip()
+                if any(op in formatted_latex for op in ['*', '+', '-', '/', '(', ')']) or '\\frac' in formatted_latex or '\\sqrt' in formatted_latex:
+                    expr_str = formatted_latex
                     
-                    if rest:
-                        rest = rest.replace('\\cdot', '*')
-                        simple_expr = f"({numerator})/({denominator}){rest}"
-                    else:
-                        simple_expr = f"({numerator})/({denominator})"
+                    # handle fractions
+                    if '\\frac' in expr_str:
+                        while '\\frac' in expr_str:
+                            # num
+                            frac_start = expr_str.find('\\frac')
+                            brace_count = 0
+                            num_start = expr_str.find('{', frac_start) + 1
+                            num_end = num_start
+                            for i in range(num_start, len(expr_str)):
+                                if expr_str[i] == '{':
+                                    brace_count += 1
+                                elif expr_str[i] == '}':
+                                    if brace_count == 0:
+                                        num_end = i
+                                        break
+                                    brace_count -= 1
+                            
+                            # denom
+                            brace_count = 0
+                            denom_start = expr_str.find('{', num_end) + 1
+                            denom_end = denom_start
+                            for i in range(denom_start, len(expr_str)):
+                                if expr_str[i] == '{':
+                                    brace_count += 1
+                                elif expr_str[i] == '}':
+                                    if brace_count == 0:
+                                        denom_end = i
+                                        break
+                                    brace_count -= 1
+                            
+                            # extract both
+                            numerator = expr_str[num_start:num_end]
+                            denominator = expr_str[denom_start:denom_end]
+                            
+                            before = expr_str[:frac_start]
+                            after = expr_str[denom_end + 1:]
+                            expr_str = f"{before}(({numerator})/({denominator})){after}"
                     
-                    sympy_expr = sp.sympify(simple_expr)
+                    # handle square roots
+                    if '\\sqrt' in expr_str:
+                        while '\\sqrt' in expr_str:
+                            sqrt_start = expr_str.find('\\sqrt')
+                            brace_count = 0
+                            content_start = expr_str.find('{', sqrt_start) + 1
+                            content_end = content_start
+                            for i in range(content_start, len(expr_str)):
+                                if expr_str[i] == '{':
+                                    brace_count += 1
+                                elif expr_str[i] == '}':
+                                    if brace_count == 0:
+                                        content_end = i
+                                        break
+                                    brace_count -= 1
+                            
+                            # extract sqrt content
+                            content = expr_str[content_start:content_end]
+                            
+                            # substitute values in content first
+                            content_with_values = content
+                            for symbol in self.symbols:
+                                if symbol.value is not None:
+                                    content_with_values = re.sub(
+                                        fr'\b{re.escape(symbol.name)}\b',
+                                        str(symbol.value),
+                                        content_with_values
+                                    )
+                            
+                            try:
+                                # try evaluating the content numerically
+                                numeric_content = float(sp.sympify(content_with_values))
+                                result = numeric_content ** 0.5
+                                before = expr_str[:sqrt_start]
+                                after = expr_str[content_end + 1:]
+                                expr_str = f"{before}{result}{after}"
+                            except (ValueError, TypeError, sp.SympifyError):
+                                # if numeric eval fails, use sympy's power
+                                before = expr_str[:sqrt_start]
+                                after = expr_str[content_end + 1:]
+                                expr_str = f"{before}(({content_with_values})**(1/2)){after}"
+                    
+                    # convert operators
+                    expr_str = expr_str.replace('\\cdot', '*')
+                    expr_str = expr_str.replace('\\times', '*')
+                    expr_str = expr_str.replace('\\div', '/')
+                    
+                    log_with_data(logger, logging.DEBUG, "converted expression", {
+                        'original': formatted_latex,
+                        'converted': expr_str
+                    })
+                    
+                    # always use sympy's sympify
+                    sympy_expr = sp.sympify(expr_str)
+                    
+                    log_with_data(logger, logging.DEBUG, "parsed to sympy", {
+                        'input': formatted_latex,
+                        'parsed': str(sympy_expr),
+                        'type': str(type(sympy_expr))
+                    })
+                    
+                    return [sympy_expr]
+                    
                 else:
-                    simple_expr = formatted_latex.replace('\\cdot', '*')
-                    sympy_expr = sp.sympify(simple_expr)
+                    # use latex2sympy for pure latex
+                    sympy_expr = latex2sympy(formatted_latex)
+                    return [sympy_expr]
+                    
+            except Exception as e:
+                log_with_data(logger, logging.ERROR, "latex conversion error", {
+                    'input_latex': self.latex,
+                    'formatted_latex': formatted_latex,
+                    'error_type': type(e).__name__,
+                    'error_message': str(e)
+                })
+                raise
             
-            log_with_data(logger, logging.DEBUG, "conversion result", {
-                'input_latex': formatted_latex,
-                'output_sympy': str(sympy_expr),
-                'sympy_type': str(type(sympy_expr))
-            })
-            
-            return [sympy_expr]
         except Exception as e:
-            log_with_data(logger, logging.ERROR, "LaTeX conversion error", {
+            log_with_data(logger, logging.ERROR, "latex conversion error", {
                 'input_latex': self.latex,
-                'formatted_latex': formatted_latex if 'formatted_latex' in locals() else None,
                 'error_type': type(e).__name__,
                 'error_message': str(e)
             })
@@ -109,7 +193,6 @@ class Expression(BaseModel):
 
     class Config:
         json_encoders = {
-            # JSON encoder for LaTeX strings
             str: lambda v: v.replace('\\', '\\\\') if '\\' in v else v
         }
 
@@ -149,7 +232,8 @@ class Solution(BaseModel):
 class MathDependencies(BaseModel):
     current_step: int = 0
     previous_steps: List[PartialSolution] = Field(default_factory=list)
-    original_problem: str = "" 
+    original_problem: str = ""
+    retriever: Optional[Any] = None
 
 class ThoughtState(BaseModel):
     """Represents a state in the thought tree"""
@@ -160,10 +244,10 @@ class ThoughtState(BaseModel):
     method: Optional[MathMethod] = None
     result: Optional[str] = None
     numeric_values: Optional[Dict[str, float]] = None
-    value_estimate: float  # Score from evaluation
+    value_estimate: float  # eval score
     is_final: bool = False
     children: List[str] = Field(default_factory=list)
-    steps_taken: List[str] = Field(default_factory=list)  # Track solution path
+    steps_taken: List[str] = Field(default_factory=list)  # track path
 
 class ThoughtTree(BaseModel):
     """Represents the tree of thoughts"""

@@ -17,35 +17,49 @@ def register_tools(agent):
                 'variable': var_name,
                 'latex_expr': expr.latex
             }
-            log_with_data(logger, logging.INFO, "Starting equation solve", input_data)
+            log_with_data(logger, logging.INFO, "[SOLVE] Starting equation solve", input_data)
             
-            # parse
-            sympy_expr = expr.to_sympy()[0]
-            log_with_data(logger, logging.INFO, "Parsed to SymPy", {
-                'sympy_expr': str(sympy_expr),
-                'expr_type': str(type(sympy_expr))
-            })
-            
-            # tool result
-            tool_result = ToolResult.from_tool(
-                name="solve_equation",
-                input_data=input_data,
-                output=""
-            )
-
-            # extract values if list of equations
-            if isinstance(sympy_expr, list):
-                solutions = [eq.rhs for eq in sympy_expr if isinstance(eq, sp.Eq)]
-                log_with_data(logger, logging.INFO, "Extracted solutions", {
-                    'solutions': [str(s) for s in solutions]
+            # convert to sympy
+            if '=' in expr.latex:
+                left_str, right_str = expr.latex.split('=')
+                
+                left_expr = Expression(
+                    latex=left_str.strip(),
+                    symbols=expr.symbols
+                )
+                right_expr = Expression(
+                    latex=right_str.strip(),
+                    symbols=expr.symbols
+                )
+                
+                left_sympy = left_expr.to_sympy()[0]
+                right_sympy = right_expr.to_sympy()[0]
+                
+                equation = sp.Eq(left_sympy, right_sympy)
+                
+                log_with_data(logger, logging.INFO, "[SOLVE] Created equation", {
+                    'left_side': str(left_sympy),
+                    'right_side': str(right_sympy),
+                    'equation': str(equation)
                 })
             else:
-                # otherwise solve
-                solutions = solve(sympy_expr, var_name)
-                log_with_data(logger, logging.INFO, "Solve result", {
-                    'solutions': [str(s) for s in solutions] if solutions else []
+                # if no equals sign, assume equation = 0 (default sympy behavior)
+                sympy_expr = expr.to_sympy()[0]
+                equation = sp.Eq(sympy_expr, 0)
+                
+                log_with_data(logger, logging.INFO, "[SOLVE] Created equation from expression", {
+                    'expression': str(sympy_expr),
+                    'equation': str(equation)
                 })
-
+            
+            # solve
+            solutions = sp.solve(equation, var_name)
+            
+            log_with_data(logger, logging.INFO, "[SOLVE] Found solutions", {
+                'solutions': [str(s) for s in solutions]
+            })
+            
+            # format
             if solutions:
                 solution_strs = []
                 numeric_sols = []
@@ -57,29 +71,25 @@ def register_tools(agent):
                         solution_strs.append(f"{var_name} = {val:.10f}")
                     except:
                         solution_strs.append(f"{var_name} = {sol}")
-
+                
                 result = ", ".join(solution_strs)
-                tool_result.output = result
-
-                log_with_data(logger, logging.INFO, "Final solution", {
+                
+                log_with_data(logger, logging.INFO, "[SOLVE] Final solution", {
                     'result': result,
                     'numeric_values': numeric_sols
                 })
                 
-                # return both formatted result and numeric values
                 return f"NUMERIC_VALUES={numeric_sols}|RESULT={result}"
             
             result = "No solution found"
-            tool_result.output = result
-            
-            log_with_data(logger, logging.INFO, "No solutions", {
-                'equation': str(sympy_expr)
+            log_with_data(logger, logging.INFO, "[SOLVE] No solutions", {
+                'equation': str(equation)
             })
             
             return result
             
         except Exception as e:
-            log_with_data(logger, logging.ERROR, "Error in solve_equation", {
+            log_with_data(logger, logging.ERROR, "[SOLVE] Error in solve_equation", {
                 'input_expr': str(expr.latex),
                 'variable': var_name,
                 'error_type': type(e).__name__,
@@ -164,34 +174,64 @@ def register_tools(agent):
     def arithmetic_operation(ctx: RunContext[MathDependencies], expr: Expression) -> str:
         """Performs basic arithmetic operations."""
         try:
-            log_with_data(logger, logging.INFO, "performing arithmetic operation", {
+            log_with_data(logger, logging.INFO, "[CALC] Starting arithmetic calculation", {
                 'input_latex': expr.latex
             })
             
             sympy_expr = expr.to_sympy()[0]
-            log_with_data(logger, logging.DEBUG, "parsed expression", {
+            log_with_data(logger, logging.DEBUG, "[CALC] Parsed expression", {
                 'sympy_expr': str(sympy_expr)
             })
             
             try:
-                result = float(sp.N(sympy_expr))
-                log_with_data(logger, logging.INFO, "arithmetic result", {
+                # sub vals, simplify
+                if isinstance(sympy_expr, sp.Basic):
+                    subs_expr = sympy_expr
+                    for symbol in expr.symbols:
+                        if symbol.value is not None:
+                            subs_expr = subs_expr.subs(sp.Symbol(symbol.name), symbol.value)
+                    
+                    result = float(subs_expr.evalf())
+                else:
+                    result = float(sympy_expr)
+                    
+                log_with_data(logger, logging.INFO, "[CALC] Calculation result", {
                     'input': str(sympy_expr),
+                    'substituted': str(subs_expr) if 'subs_expr' in locals() else str(sympy_expr),
                     'result': result
                 })
                 return str(result)
-            except TypeError:
-                # try evaluating the expression if direct conversion fails
-                result = sympy_expr.evalf()
-                numeric_result = float(result)
-                log_with_data(logger, logging.INFO, "arithmetic result after evaluation", {
-                    'input': str(sympy_expr),
-                    'result': numeric_result
+                
+            except (TypeError, ValueError) as e:
+                log_with_data(logger, logging.WARNING, "[CALC] Direct evaluation failed, trying alternative method", {
+                    'error': str(e)
                 })
-                return str(numeric_result)
+                # if direct conversion fails, try eval step by step
+                try:
+                    # sub all vals
+                    subs_expr = sympy_expr
+                    for symbol in expr.symbols:
+                        if symbol.value is not None:
+                            subs_expr = subs_expr.subs(sp.Symbol(symbol.name), symbol.value)
+                    
+                    # simplify, eval
+                    simplified = sp.simplify(subs_expr)
+                    evaluated = simplified.doit()
+                    result = float(evaluated.evalf())
+                    
+                    log_with_data(logger, logging.INFO, "[CALC] Calculation result after step-by-step evaluation", {
+                        'input': str(sympy_expr),
+                        'substituted': str(subs_expr),
+                        'simplified': str(simplified),
+                        'evaluated': str(evaluated),
+                        'result': result
+                    })
+                    return str(result)
+                except Exception as inner_e:
+                    raise Exception(f"Failed to evaluate expression after substitution: {str(inner_e)}")
                 
         except Exception as e:
-            log_with_data(logger, logging.ERROR, "error in arithmetic operation", {
+            log_with_data(logger, logging.ERROR, "[CALC] Error in arithmetic operation", {
                 'input_expr': str(expr.latex),
                 'error_type': type(e).__name__,
                 'error_message': str(e)

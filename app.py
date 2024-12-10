@@ -20,7 +20,6 @@ def visualize_thought_tree(tree):
     """create a visualization of the thought tree"""
     G = nx.DiGraph()
     
-    # Add nodes and edges
     for state_id, state in tree.states.items():
         G.add_node(state_id, 
                   value=f"{state.value_estimate:.2f}",
@@ -28,15 +27,12 @@ def visualize_thought_tree(tree):
         if state.parent_id:
             G.add_edge(state.parent_id, state_id)
     
-    # Create layout
     pos = nx.spring_layout(G)
     
-    # Draw graph
     plt.figure(figsize=(12, 8))
     nx.draw(G, pos, with_labels=True, node_color='lightblue', 
             node_size=2000, font_size=8, arrows=True)
     
-    # Add value estimates as labels
     labels = nx.get_node_attributes(G, 'value')
     nx.draw_networkx_labels(G, pos, labels, font_size=8)
     
@@ -66,7 +62,6 @@ if st.button('Solve'):
         with st.spinner('Solving...'):
             solution, thought_process, tree, examples, path = asyncio.run(solve_math_problem(problem))
             
-            # Display similar examples
             st.subheader("Similar Examples Used:")
             for i, example in enumerate(examples, 1):
                 with st.expander(f"Example {i} - Similarity: {example.similarity:.2f}"):
@@ -81,20 +76,18 @@ if st.button('Solve'):
                 st.write("Result:", solution.symbolic_result)
             st.write("Explanation:", solution.explanation)
             
-            # Show solution path
             st.subheader("Solution Process:")
-            for i, state in enumerate(path):
+            for i, state in enumerate(path):    # TODO: fix this
                 with st.expander(f"Step {i+1} - Score: {state.value_estimate:.2f}"):
                     st.write("Reasoning:", state.reasoning)
                     if state.result:
                         st.write("Result:", state.result)
             
-            # Show thought tree visualization
             st.subheader("Full Search Tree")
             fig = visualize_thought_tree(tree)
             st.pyplot(fig)
             
-            # Show raw process
+            # TODO: fix this
             with st.expander("See raw solution steps"):
                 st.text(thought_process)
     else:

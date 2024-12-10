@@ -3,7 +3,7 @@ from solver import MathSolver
 async def main():
     solver = MathSolver()
     
-    # Example problems
+    # examples
     problems = [
         # "Solve the equation x^2 + 2x + 1 = 0",
         # "Solve the equation x^2 - 1432.0012x + 1.7184 = 0",
