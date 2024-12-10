@@ -17,6 +17,7 @@ class MathMethod(str, Enum):
     INTEGRATE = "integrate"
     DIFFERENTIATE = "differentiate"
     ARITHMETIC = "arithmetic"
+    EVALUATE = "evaluate"
 
 class MathSymbol(BaseModel):
     name: str
@@ -134,27 +135,38 @@ class PartialSolution(BaseModel):
     expression: Expression
     method: MathMethod
     result: Optional[str] = None
-    numeric_values: Optional[List[float]] = None
+    numeric_values: Optional[Dict[str, float]] = None
     is_final: bool = False
     tool_results: List[ToolResult] = Field(default_factory=list)
 
 class Solution(BaseModel):
+    """Final solution model that OpenAI must conform to"""
     explanation: str
-    numeric_values: Optional[List[float]] = None
+    numeric_values: Optional[Dict[str, float]] = None
     symbolic_result: Optional[str] = None
-    
-    @classmethod
-    def from_partial_solutions(cls, partial_solutions: List[PartialSolution]) -> 'Solution':
-        """Creates a Solution from a list of PartialSolutions."""
-        final_step = partial_solutions[-1]
-        
-        return cls(
-            explanation=final_step.reasoning,
-            numeric_values=final_step.numeric_values,
-            symbolic_result=final_step.result
-        )
+    is_final: bool = True
 
 class MathDependencies(BaseModel):
     current_step: int = 0
     previous_steps: List[PartialSolution] = Field(default_factory=list)
     original_problem: str = "" 
+
+class ThoughtState(BaseModel):
+    """Represents a state in the thought tree"""
+    state_id: str
+    parent_id: Optional[str] = None
+    reasoning: str
+    expression: Optional[Expression] = None
+    method: Optional[MathMethod] = None
+    result: Optional[str] = None
+    numeric_values: Optional[Dict[str, float]] = None
+    value_estimate: float  # Score from evaluation
+    is_final: bool = False
+    children: List[str] = Field(default_factory=list)
+    steps_taken: List[str] = Field(default_factory=list)  # Track solution path
+
+class ThoughtTree(BaseModel):
+    """Represents the tree of thoughts"""
+    states: Dict[str, ThoughtState] = Field(default_factory=dict)
+    root_id: str
+    current_id: str

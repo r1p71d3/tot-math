@@ -9,82 +9,6 @@ from retriever import retrieve_similar
 logger = setup_logger('tools')
 
 def register_tools(agent):
-    @agent.result_validator
-    async def validate_solution(ctx: RunContext[MathDependencies], result: PartialSolution) -> PartialSolution:
-        """validates solution by checking reasoning and numeric values"""
-        try:
-            if not result.is_final:
-                return result
-
-            log_with_data(logger, logging.INFO, "starting solution validation", {
-                'original_problem': ctx.deps.original_problem,
-                'final_step': {
-                    'reasoning': result.reasoning,
-                    'method': result.method,
-                    'numeric_values': result.numeric_values,
-                    'result': result.result,
-                    'tool_results': [t.output for t in result.tool_results] if result.tool_results else []
-                }
-            })
-
-            # validate basic requirements
-            if not result.reasoning:
-                log_with_data(logger, logging.WARNING, "validation failed", {
-                    'reason': "missing reasoning"
-                })
-                raise ModelRetry("solution must include clear reasoning")
-
-            if not result.result:
-                log_with_data(logger, logging.WARNING, "validation failed", {
-                    'reason': "missing result"
-                })
-                raise ModelRetry("solution must include a clear result")
-
-            # validate counting questions
-            if "how many" in ctx.deps.original_problem.lower():
-                problem_text = ctx.deps.original_problem.lower()
-                
-                discrete_indicators = [
-                    "people", "students", "books", "cards", "marbles", "solutions",
-                    "ways", "times", "groups", "pairs", "sets", "pieces", "items"
-                ]
-                
-                requires_integer = any(indicator in problem_text for indicator in discrete_indicators)
-                
-                if requires_integer:
-                    if not result.numeric_values or len(result.numeric_values) != 1:
-                        log_with_data(logger, logging.WARNING, "validation failed", {
-                            'reason': "missing or invalid numeric value for count"
-                        })
-                        raise ModelRetry("'how many' questions must have a single numeric value")
-                    
-                    if not float(result.numeric_values[0]).is_integer():
-                        log_with_data(logger, logging.WARNING, "validation failed", {
-                            'reason': "count must be an integer for discrete items"
-                        })
-                        raise ModelRetry("when counting discrete items, the answer must be an integer")
-
-            log_with_data(logger, logging.INFO, "solution validation passed", {
-                'reasoning': result.reasoning,
-                'result': result.result,
-                'numeric_values': result.numeric_values
-            })
-
-            return result
-
-        except Exception as e:
-            if isinstance(e, ModelRetry):
-                log_with_data(logger, logging.WARNING, "validation failed", {
-                    'error_type': 'ModelRetry',
-                    'reason': str(e)
-                })
-                raise
-            log_with_data(logger, logging.ERROR, "validation error", {
-                'error_type': type(e).__name__,
-                'error_message': str(e)
-            })
-            raise
-
     @agent.tool
     def solve_equation(ctx: RunContext[MathDependencies], expr: Expression, var_name: str) -> str:
         """Solves an equation for a given variable."""
@@ -164,44 +88,6 @@ def register_tools(agent):
             raise
 
     @agent.tool
-    def arithmetic_operation(ctx: RunContext[MathDependencies], expr: Expression) -> str:
-        """performs basic arithmetic operations"""
-        try:
-            log_with_data(logger, logging.INFO, "performing arithmetic operation", {
-                'input_latex': expr.latex
-            })
-            
-            sympy_expr = expr.to_sympy()[0]
-            log_with_data(logger, logging.DEBUG, "parsed expression", {
-                'sympy_expr': str(sympy_expr)
-            })
-            
-            try:
-                result = float(sp.N(sympy_expr))
-                log_with_data(logger, logging.INFO, "arithmetic result", {
-                    'input': str(sympy_expr),
-                    'result': result
-                })
-                return str(result)
-            except TypeError:
-                # try evaluating the expression if direct conversion fails
-                result = sympy_expr.evalf()
-                numeric_result = float(result)
-                log_with_data(logger, logging.INFO, "arithmetic result after evaluation", {
-                    'input': str(sympy_expr),
-                    'result': numeric_result
-                })
-                return str(numeric_result)
-                
-        except Exception as e:
-            log_with_data(logger, logging.ERROR, "error in arithmetic operation", {
-                'input_expr': str(expr.latex),
-                'error_type': type(e).__name__,
-                'error_message': str(e)
-            })
-            raise
-
-    @agent.tool
     def factor_expression(ctx: RunContext[MathDependencies], expr: Expression) -> str:
         """Factors a mathematical expression."""
         try:
@@ -273,5 +159,43 @@ def register_tools(agent):
         var = sp.Symbol(var_name)
         result = diff(sympy_expr, var)
         return str(result)
+
+    @agent.tool
+    def arithmetic_operation(ctx: RunContext[MathDependencies], expr: Expression) -> str:
+        """Performs basic arithmetic operations."""
+        try:
+            log_with_data(logger, logging.INFO, "performing arithmetic operation", {
+                'input_latex': expr.latex
+            })
+            
+            sympy_expr = expr.to_sympy()[0]
+            log_with_data(logger, logging.DEBUG, "parsed expression", {
+                'sympy_expr': str(sympy_expr)
+            })
+            
+            try:
+                result = float(sp.N(sympy_expr))
+                log_with_data(logger, logging.INFO, "arithmetic result", {
+                    'input': str(sympy_expr),
+                    'result': result
+                })
+                return str(result)
+            except TypeError:
+                # try evaluating the expression if direct conversion fails
+                result = sympy_expr.evalf()
+                numeric_result = float(result)
+                log_with_data(logger, logging.INFO, "arithmetic result after evaluation", {
+                    'input': str(sympy_expr),
+                    'result': numeric_result
+                })
+                return str(numeric_result)
+                
+        except Exception as e:
+            log_with_data(logger, logging.ERROR, "error in arithmetic operation", {
+                'input_expr': str(expr.latex),
+                'error_type': type(e).__name__,
+                'error_message': str(e)
+            })
+            raise
 
     agent.tool(retrieve_similar)

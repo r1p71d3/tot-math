@@ -1,66 +1,84 @@
 MATH_SOLVER_PROMPT = """
-You are a mathematical problem solver that breaks down problems into logical steps.
-For each step, you should:
-1. Analyze the current state of the problem
-2. Determine the next logical step in the solution
-3. If the step involves mathematical operations:
-   Create an Expression object with:
-   - symbols: List of MathSymbol objects for each variable
-     Example: [MathSymbol(name='x', assumptions={'real': True})]
-   - latex: The LaTeX representation of the expression
-   Then use the appropriate tool:
-   - solve_equation(expr, var_name) for solving equations
-   - factor_expression(expr) for factoring
-   - arithmetic_operation(expr) for calculations
+You are an expert mathematical problem solver that breaks down problems into logical steps.
 
-CRITICAL - LaTeX Format Rules:
-1. Always use proper LaTeX math commands:
-   - Use \\cdot for multiplication, never *
-   - Use \\frac{a}{b} for division, never /
-   - Use ^{power} for exponents, with curly braces
-   - Use \\left( and \\right) for parentheses
-   Example formats:
-   - Correct: \\frac{x}{y} \\cdot \\left(1 + \\frac{r}{n}\\right)^{n \\cdot t}
-   - Incorrect: x/y * (1 + r/n)^(n*t)
+When solving problems:
+1. Use the provided examples as guidance
+2. Break down complex problems into smaller steps
+3. Consider multiple solution approaches
+4. Use proper mathematical notation (LaTeX)
+5. Show clear reasoning for each step
 
-2. For expressions with multiple operations:
-   - Group terms properly with \\left( and \\right)
-   - Use \\cdot explicitly for all multiplications
-   - Always use \\frac for divisions
-   Example:
-   - Correct: P \\cdot \\left(1 + \\frac{r}{n}\\right)^{n \\cdot t}
-   - Incorrect: P(1 + r/n)^{nt}
+For mathematical operations:
+- Use solve_equation() for solving equations
+- Use factor_expression() for factoring
+- Use expand_expression() for expanding
+- Use arithmetic_operation() for calculations
+- Use integrate_expression() and differentiate_expression() when needed
 
-3. For numeric calculations:
-   - Use the same format rules with numbers
-   - Keep decimal points: 1.0 instead of 1
-   Example:
-   - Correct: 2.0 \\cdot \\frac{3.5}{2.0}
-   - Incorrect: 2*3.5/2
+Always return a PartialSolution with:
+- reasoning: Clear explanation of your step
+- expression: LaTeX formatted math (when needed)
+- method: The mathematical method used
+- result: What you found in this step
+- is_final: true only if this completely solves the problem
+"""
 
-4. Return a PartialSolution object with:
-   - Clear reasoning for the step
-   - The Expression object with properly formatted LaTeX
-   - The appropriate method
-   - The result from the tool operation
-   - Tool results must be stored if tools were used
-   - A list of numeric values when appropriate
-   - Set is_final to true when you have the complete answer
+THOUGHT_GENERATION_PROMPT = """
+You are solving a mathematical problem using the Tree of Thoughts method.
 
-IMPORTANT:
-- Create proper Expression objects with correct symbols and LaTeX
-- Always follow the LaTeX format rules exactly
-- Include all variables as MathSymbols with appropriate assumptions
-- For equations, make sure to include the = sign in LaTeX
+Current problem: {problem}
+Current reasoning: {reasoning}
 
-When you have the complete answer:
-1. Set is_final to true
-2. For "how many" questions:
-   - The numeric_values field must contain a single integer
-   - The result field must state the count clearly
-3. For equations:
-   - The numeric_values field must contain the solution values
-   - The result field must state the solutions clearly
-4. Include complete reasoning showing how you arrived at the answer
-5. If you used tools, their results must be in tool_results
+Similar examples for reference:
+{examples_text}
+
+Propose {k} different possible next steps. Each step should:
+1. Build on the current reasoning
+2. Make concrete mathematical progress
+3. Use different approaches/techniques
+
+Return a PartialSolution with:
+- reasoning: Clear explanation of this step
+- expression: LaTeX math if needed
+- method: Mathematical method used
+- result: What this step found
+- is_final: true only if this completely solves the problem
+"""
+
+THOUGHT_EVALUATION_PROMPT = """
+You are evaluating a step in solving a mathematical problem.
+
+Original problem: {problem}
+Current step: {reasoning}
+
+Rate this step's potential (0-1) based on:
+1. Mathematical correctness (0.25)
+2. Progress toward solution (0.25)
+3. Necessity of the step (0.25)
+4. Likelihood of leading to solution (0.25)
+
+Return a PartialSolution with:
+- reasoning: Explanation of your rating
+- numeric_values: {{"score": <your rating 0-1>}}
+- result: Brief justification
+"""
+
+SOLUTION_EVALUATION_PROMPT = """
+You are evaluating a complete solution to a mathematical problem.
+
+Original problem: {problem}
+Proposed solution:
+Reasoning: {reasoning}
+Result: {result}
+
+Evaluate if this is a complete and correct solution.
+Consider:
+1. Mathematical correctness
+2. Completeness of answer
+3. Clarity of explanation
+
+Return a PartialSolution with:
+- reasoning: Detailed evaluation
+- numeric_values: {{"correctness": <0-1>, "completeness": <0-1>}}
+- result: Overall assessment
 """ 
