@@ -23,6 +23,11 @@ To test the model on arbitrary problems you can use the Streamlit GUI:
 
 `streamlit run app.py`
 
-To evaluate on the 50 problem benchmark used for all our models run the main script (**IMPROTANT:** running the benchmark will very likely result in double digit API costs.)
+To evaluate on the 50 problem benchmark from the MATH evaluation set:
 
 `python main.py`
+
+**IMPROTANT:** running the benchmark will very likely result in double digit API costs.
+
+## Results
+Our runs suggested the benchmark accuracy of around 84%. You can view the results of other GPT agents [here](https://github.com/emilyworks/tot/blob/gpt/README.md) and the Llama models [here](https://github.com/emilyworks/tot/blob/main/README.md) in their respective **Results** sections.
