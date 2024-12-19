@@ -19,6 +19,10 @@ This is an implementation of the Tree of Thought algorithm that utilizes RAG and
 (**NOTE**: by the nature of the ToT framework, it results in a considerable token usage, with costs as high as $0.5 - $1.2 per query.)
 
 ## Run
-You interact with the GUI by running the Streamlit app:
+To test the model on arbitrary problems you can use the Streamlit GUI:
 
 `streamlit run app.py`
+
+To evaluate on the 50 problem benchmark used for all our models run the main script (**IMPROTANT:** running the benchmark will very likely result in double digit API costs.)
+
+`python main.py`
