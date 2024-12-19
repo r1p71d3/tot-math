@@ -1,3 +1,6 @@
+## About
+This is an implementation of the Tree of Thought algorithm that utilizes RAG and math tools. For the basic GPT and the Llama quantization & LoRA verions, please refer to the `gpt` and `main` branches of the following repository: https://github.com/emilyworks/tot.
+
 ## Setup 
 1. Install the requirements
 
@@ -9,6 +12,13 @@
 
 `python compute_embeddings.py`
 
-5. Run the app 
+5. Export your OpenAI API key as an environment variable or place it in an `.env` file in the project directory
+
+`export OPENAI_API_KEYU="your api key"`
+
+(**NOTE**: by the nature of the ToT framework, it results in a considerable token usage, with costs as high as $0.5 - $1.2 per query.)
+
+## Run
+You interact with the GUI by running the Streamlit app:
 
 `streamlit run app.py`
